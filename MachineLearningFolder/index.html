@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Prédiction de maladie</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        h1 {
+            text-align: center;
+        }
+        label {
+            font-weight: bold;
+        }
+        input, button {
+            padding: 8px;
+            margin-top: 8px;
+            margin-bottom: 16px;
+            box-sizing: border-box;
+        }
+        input {
+            width: 100%;
+        }
+        button {
+            cursor: pointer;
+        }
+        .result {
+            background: #f7f7f7;
+            padding: 12px;
+            border-radius: 6px;
+            white-space: pre-wrap;
+        }
+        .chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 16px;
+        }
+        .chip {
+            background: #e0e0e0;
+            border-radius: 20px;
+            padding: 4px 10px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 14px;
+        }
+        .chip button {
+            padding: 0 6px;
+            margin: 0;
+            border: none;
+            background: #c0392b;
+            color: white;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Prédiction de maladie</h1>
+
+    <p>
+        Commence à taper un symptôme, puis choisis dans la liste proposée.<br>
+        Par exemple : <code>itching</code>, <code>skin_rash</code>, etc.
+    </p>
+
+    <label for="symptom-input">Ajouter un symptôme :</label><br>
+    <input id="symptom-input" list="symptom-list" placeholder="Commencez à taper...">
+    <datalist id="symptom-list"></datalist>
+
+    <button onclick="addSymptom()">Ajouter le symptôme</button>
+
+    <h3>Symptômes sélectionnés :</h3>
+    <div id="selected-symptoms" class="chips">
+        <!-- tags des symptômes ici -->
+    </div>
+
+    <button onclick="predict()">Prédire la maladie</button>
+
+    <h2>Résultat :</h2>
+    <div id="result" class="result">
+        (le résultat s'affichera ici)
+    </div>
+
+    <script>
+        let allSymptoms = [];
+        let selectedSymptoms = [];
+
+        // Charger la liste des symptômes depuis l'API au chargement de la page
+        window.addEventListener("DOMContentLoaded", async () => {
+            try {
+                const res = await fetch("/symptoms");
+                const data = await res.json();
+                allSymptoms = data.symptoms || [];
+
+                const datalist = document.getElementById("symptom-list");
+                allSymptoms.forEach(sym => {
+                    const option = document.createElement("option");
+                    option.value = sym;
+                    datalist.appendChild(option);
+                });
+            } catch (err) {
+                console.error("Erreur chargement des symptômes :", err);
+            }
+        });
+
+        function renderSelectedSymptoms() {
+            const container = document.getElementById("selected-symptoms");
+            container.innerHTML = "";
+            selectedSymptoms.forEach((sym, index) => {
+                const chip = document.createElement("div");
+                chip.className = "chip";
+                chip.innerHTML = `
+                    <span>${sym}</span>
+                    <button onclick="removeSymptom(${index})">x</button>
+                `;
+                container.appendChild(chip);
+            });
+        }
+
+        function addSymptom() {
+            const input = document.getElementById("symptom-input");
+            const value = input.value.trim();
+            if (!value) return;
+
+            // vérifier si le symptôme existe dans la liste
+            if (!allSymptoms.includes(value)) {
+                alert("Ce symptôme n'existe pas dans la base de données : " + value);
+                return;
+            }
+
+            // éviter les doublons
+            if (!selectedSymptoms.includes(value)) {
+                selectedSymptoms.push(value);
+                renderSelectedSymptoms();
+            }
+
+            input.value = "";
+        }
+
+        function removeSymptom(index) {
+            selectedSymptoms.splice(index, 1);
+            renderSelectedSymptoms();
+        }
+
+        async function predict() {
+            if (selectedSymptoms.length === 0) {
+                document.getElementById("result").innerText =
+                    "Veuillez ajouter au moins un symptôme.";
+                return;
+            }
+
+            try {
+                const response = await fetch("/predict", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ symptoms: selectedSymptoms })
+                });
+
+                if (!response.ok) {
+                    const txt = await response.text();
+                    document.getElementById("result").innerText =
+                        "Erreur API (" + response.status + "): " + txt;
+                    return;
+                }
+
+                const data = await response.json();
+
+                let text = "";
+                text += "🦠 Maladie prédite : " + data.disease + "\n\n";
+                text += "📖 Description :\n" + data.description + "\n\n";
+
+                if (data.precautions && data.precautions.length > 0) {
+                    text += "✅ Précautions :\n";
+                    for (const p of data.precautions) {
+                        text += " - " + p + "\n";
+                    }
+                }
+
+                if (data.severity_score !== null && data.severity_score !== undefined) {
+                    text += "\n⚠️ Score de gravité : " + data.severity_score;
+                }
+
+                text += "\n\n🧩 Symptômes utilisés :\n" + selectedSymptoms.join(", ");
+
+                document.getElementById("result").innerText = text;
+
+            } catch (err) {
+                document.getElementById("result").innerText =
+                    "Erreur de connexion à l'API : " + err;
+            }
+        }
+    </script>
+</body>
+</html>
